@@ -142,30 +142,60 @@ async def load_model():
 # ═══════════════════════════════════════════════════════════════
 
 def clean_response(text: str) -> str:
-    """Clean up model response - remove artifacts and duplicates"""
+    """Clean up model response - remove artifacts, name prefixes, and self-dialogue"""
     if not text:
         return ""
     
-    # Remove character name prefixes (e.g., "Scarlett:", "Emma:")
-    text = re.sub(r'^[A-Z][a-z]+:\s*', '', text.strip(), flags=re.MULTILINE)
+    # Split into lines for processing
+    lines = text.strip().split('\n')
+    cleaned_lines = []
     
-    # Remove User/Human echo
-    text = re.sub(r'^(User|Human|Assistant|Response):\s*', '', text.strip(), flags=re.MULTILINE)
-    
-    # Remove prompt markers
-    for marker in ["### Input:", "### Response:", "### Instruction:", "### Human:", "### Assistant:"]:
-        if marker in text:
-            text = text.split(marker)[0].strip()
-    
-    # Remove duplicate consecutive lines
-    lines = text.split('\n')
-    unique_lines = []
     for line in lines:
-        trimmed = line.strip()
-        if trimmed and (not unique_lines or unique_lines[-1].strip() != trimmed):
-            unique_lines.append(line)
+        original_line = line
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Remove character name prefix at start (e.g., "Scarlett:", "Kira:", "Emma:")
+        line = re.sub(r'^[A-Z][a-z]+:\s*', '', line)
+        
+        # Remove User/Human/Assistant markers
+        line = re.sub(r'^(User|Human|Assistant|Response|Input|Instruction):\s*', '', line, flags=re.IGNORECASE)
+        
+        # Skip if line is now empty
+        if not line.strip():
+            continue
+            
+        # Skip if this looks like the model asking itself a question then answering
+        # (lines that start with common question patterns after a previous response)
+        if cleaned_lines and re.match(r'^(How|What|Why|When|Where|Do you|Have you|Are you|Can you|Would you)', line):
+            # Check if previous line was a complete thought (ends with . ! ? or emoji)
+            prev = cleaned_lines[-1].strip()
+            if prev and (prev[-1] in '.!?😊😘💕🥰😏' or prev.endswith(')')):
+                # This might be a self-asked question - skip it
+                continue
+        
+        # Skip duplicate content
+        if cleaned_lines and line.strip() == cleaned_lines[-1].strip():
+            continue
+            
+        cleaned_lines.append(line)
     
-    return '\n'.join(unique_lines).strip()
+    result = '\n'.join(cleaned_lines).strip()
+    
+    # Final cleanup: remove any trailing prompt markers
+    for marker in ["### Input:", "### Response:", "### Instruction:", "### Human:", "### Assistant:", "###"]:
+        if marker in result:
+            result = result.split(marker)[0].strip()
+    
+    # If we ended up with nothing, return the original first line cleaned
+    if not result and text.strip():
+        first_line = text.strip().split('\n')[0]
+        result = re.sub(r'^[A-Z][a-z]+:\s*', '', first_line).strip()
+    
+    return result
 
 # ═══════════════════════════════════════════════════════════════
 # Generation Logic
@@ -230,18 +260,21 @@ async def status():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: SimpleChatRequest, _: bool = Depends(verify_api_key)):
     """
-    Simple chat endpoint
+    Simple chat endpoint - receives ready-to-use prompt
     
     Request body:
-    - prompt: User message
-    - system_prompt: Character/system prompt (optional)
+    - prompt: Full formatted prompt (built by caller)
+    - system_prompt: Optional additional context
     - max_tokens, temperature, top_p: Generation params (optional)
     """
     if not hasattr(app.state, 'model') or not app.state.model:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
-    # Build simple prompt
-    full_prompt = f"{req.system_prompt}\n\nUser: {req.prompt}\n\nResponse:"
+    # If system_prompt provided, prepend it; otherwise use prompt as-is
+    if req.system_prompt and req.system_prompt != "You are a helpful assistant.":
+        full_prompt = f"{req.system_prompt}\n\n{req.prompt}"
+    else:
+        full_prompt = req.prompt
     
     # Use defaults from env if not provided
     max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS
