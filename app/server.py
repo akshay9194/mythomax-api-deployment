@@ -98,12 +98,13 @@ async def load_model():
         logger.info(f"Loading {MODEL_NAME}...")
         logger.info(f"Cache directory: {MODEL_VOLUME}")
         
-        # 4-bit quantization config
+        # 4-bit quantization config with CPU offload support
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
+            llm_int8_enable_fp32_cpu_offload=True,  # Allow CPU offload for overflow
         )
         
         # Load tokenizer
@@ -122,6 +123,7 @@ async def load_model():
             device_map="auto",
             trust_remote_code=True,
             use_safetensors=True,
+            low_cpu_mem_usage=True,  # Reduce memory during loading
         )
         
         if torch.cuda.is_available():

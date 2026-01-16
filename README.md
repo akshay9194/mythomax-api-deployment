@@ -9,17 +9,13 @@ Configurable MythoMax-L2-13B API for AI chat applications. Optimized for RunPod 
 pip install transformers accelerate bitsandbytes safetensors fastapi uvicorn protobuf sentencepiece && git clone https://github.com/akshay9194/mythomax-api-deployment.git /workspace/app && cd /workspace/app/app && uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-### Environment Variables
+### Environment Variables (all optional)
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `API_KEY` | _(none)_ | Bearer token for auth (empty = no auth) |
 | `MODEL_NAME` | `Gryphe/MythoMax-L2-13B` | HuggingFace model ID |
-| `MODEL_VOLUME_PATH` | `/workspace/models` | Model cache directory |
-| `API_KEY` | `` | Bearer token (empty = no auth) |
-| `DEFAULT_MAX_TOKENS` | `512` | Default generation length |
-| `DEFAULT_TEMPERATURE` | `0.85` | Default temperature |
-| `DEFAULT_TOP_P` | `0.9` | Default top_p |
-| `REPETITION_PENALTY` | `1.1` | Repetition penalty |
-| `MAX_HISTORY` | `10` | Max chat history messages |
+| `DEFAULT_MAX_TOKENS` | `512` | Max generation length |
+| `DEFAULT_TEMPERATURE` | `0.85` | Creativity (0.0-1.0) |
 
 ### RunPod Setup
 1. Create Network Volume (50GB) in your region
