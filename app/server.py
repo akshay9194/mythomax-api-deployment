@@ -101,6 +101,8 @@ def clean_response(text: str) -> str:
     for marker in ["### Input:", "### Response:", "### Instruction:", "### Human:", "### Assistant:", "###"]:
         if marker in result:
             result = result.split(marker)[0].strip()
+    # Strip any SEND_IMAGE tokens the model outputs
+    result = re.sub(r'\[?SEND_IMAGE\]?', '', result, flags=re.IGNORECASE).strip()
     return result
 
 # ── Endpoints ────────────────────────────────────────────────

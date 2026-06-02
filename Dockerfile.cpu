@@ -1,0 +1,30 @@
+# MythoMax API — CPU-Only Mode (GGUF + llama-cpp-python)
+# OpenBLAS causes thread contention with llama.cpp's OpenMP — native GGML is faster for Q4_K
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENV MODEL_DIR=/workspace/models
+ENV GPU_LAYERS=0
+
+# System deps: libgomp for OpenMP threading, build tools for compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 curl build-essential cmake && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install llama-cpp-python (CPU, native GGML kernels + OpenMP) + FastAPI
+RUN CMAKE_ARGS="-DGGML_BLAS=OFF" \
+    pip install --no-cache-dir \
+    llama-cpp-python \
+    fastapi uvicorn[standard] boto3
+
+# Copy application
+COPY app/model_loader.py .
+COPY app/server.py .
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
+    CMD curl -sf http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

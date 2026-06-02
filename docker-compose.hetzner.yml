@@ -1,0 +1,93 @@
+# ═══════════════════════════════════════════════════════════════
+# MythoMax API — Hetzner CPX62 Deployment
+# ═══════════════════════════════════════════════════════════════
+#
+#  Stack: Caddy (auto HTTPS + API key gate) → MythoMax CPU
+#  Domain: mythomax.parallaxstar.com
+#  Called by Azure XinMate app via RUNPOD_LLM_BASE_URL
+#
+#  Deploy: docker compose -f docker-compose.hetzner.yml up -d
+#
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Caddy — HTTPS + Bearer token gate ──────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: mythomax-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      mythomax:
+        condition: service_healthy
+    networks:
+      - mythomax-network
+    environment:
+      - MYTHOMAX_API_KEY=${MYTHOMAX_API_KEY:?Set MYTHOMAX_API_KEY in .env}
+
+  # ── MythoMax LLM (CPU) ─────────────────────────────────────
+  mythomax:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: mythomax-api
+    ports: []   # Only Caddy exposes ports
+    volumes:
+      - ./models:/workspace/models:ro
+    environment:
+      - GPU_LAYERS=0
+      - MODEL_DIR=/workspace/models
+      - MODEL_FILENAME=mythomax-l2-13b.Q4_K_M.gguf
+      - DEFAULT_MAX_TOKENS=512
+      - DEFAULT_TEMPERATURE=0.85
+      # === Memory optimization ===
+      # CPX52 (24GB): Use N_CTX=2048 (~12GB total RAM)
+      # CPX62 (32GB): Use N_CTX=2048 (~12GB) or N_CTX=4096 (~16.5GB)
+      - N_CTX=2048
+      - N_BATCH=512
+      # Lock model in physical RAM — prevents swap/eviction
+      - USE_MLOCK=true
+      # === Threading ===
+      # 5 threads per inference — leaves CPU headroom for OS + queued requests
+      # On CPX62 (16 vCPU): can handle 1 active + queue others
+      - N_THREADS=5
+      - N_THREADS_BATCH=5
+    networks:
+      - mythomax-network
+    # Unlimited memlock so mlock() succeeds
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    deploy:
+      resources:
+        limits:
+          # CPX52: 24g | CPX62: 32g
+          memory: 24g
+    # Auto-restart on crash or OOM — model reloads in ~10 min
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 3
+
+volumes:
+  caddy_data:
+    name: mythomax-caddy-data
+  caddy_config:
+    name: mythomax-caddy-config
+
+networks:
+  mythomax-network:
+    name: mythomax-network
+    driver: bridge

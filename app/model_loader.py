@@ -33,6 +33,16 @@ MODEL_FILENAME = os.getenv("MODEL_FILENAME", "mythomax-l2-13b.Q4_K_M.gguf")
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "/workspace/models"))
 MODEL_PATH = MODEL_DIR / MODEL_FILENAME
 GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
+N_CTX = int(os.getenv("N_CTX", "4096"))
+N_BATCH = int(os.getenv("N_BATCH", "512"))
+USE_MLOCK = os.getenv("USE_MLOCK", "true").lower() in ("true", "1", "yes")
+
+# Threading: auto-detect CPU count if not set
+# n_threads = threads for generation (token-by-token)
+# n_threads_batch = threads for prompt evaluation (parallel matrix ops, benefits most from more cores)
+_cpu_count = os.cpu_count() or 4
+N_THREADS = int(os.getenv("N_THREADS", str(_cpu_count)))
+N_THREADS_BATCH = int(os.getenv("N_THREADS_BATCH", str(_cpu_count)))
 
 # R2 config
 R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
@@ -99,16 +109,20 @@ def load_model():
         download_from_r2()
 
     # Step 3: Load
-    logger.info(f"Loading model with {GPU_LAYERS} GPU layers...")
+    logger.info(f"Loading model: gpu_layers={GPU_LAYERS}, n_ctx={N_CTX}, mlock={USE_MLOCK}, threads={N_THREADS}, threads_batch={N_THREADS_BATCH}")
     sys.stdout.flush()
     sys.stderr.flush()
     try:
         llm = Llama(
             model_path=str(MODEL_PATH),
             n_gpu_layers=GPU_LAYERS,
-            n_ctx=4096,
-            n_batch=512,
-            verbose=True,  # Show llama.cpp internal logs for debugging
+            n_ctx=N_CTX,
+            n_batch=N_BATCH,
+            n_threads=N_THREADS,
+            n_threads_batch=N_THREADS_BATCH,
+            use_mlock=USE_MLOCK,
+            use_mmap=True,
+            verbose=True,
         )
     except Exception as e:
         logger.error(f"GPU load failed: {e}")
@@ -116,8 +130,12 @@ def load_model():
         llm = Llama(
             model_path=str(MODEL_PATH),
             n_gpu_layers=0,
-            n_ctx=4096,
-            n_batch=512,
+            n_ctx=N_CTX,
+            n_batch=N_BATCH,
+            n_threads=N_THREADS,
+            n_threads_batch=N_THREADS_BATCH,
+            use_mlock=USE_MLOCK,
+            use_mmap=True,
             verbose=True,
         )
     logger.info("Model loaded and ready!")

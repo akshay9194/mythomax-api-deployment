@@ -1,0 +1,33 @@
+# MythoMax local CPU testing — 32GB RAM limit
+services:
+  mythomax:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: mythomax-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/workspace/models:ro
+    environment:
+      - GPU_LAYERS=0
+      - MODEL_DIR=/workspace/models
+      - MODEL_FILENAME=mythomax-l2-13b.Q4_K_M.gguf
+      - DEFAULT_MAX_TOKENS=512
+      - DEFAULT_TEMPERATURE=0.85
+      - N_CTX=2048
+      - N_BATCH=512
+      - USE_MLOCK=true
+      # 5 threads = serve 1 user well, leave headroom for OS + queued requests
+      - N_THREADS=5
+      - N_THREADS_BATCH=5
+    deploy:
+      resources:
+        limits:
+          memory: 32g
+    # Pin model in RAM — prevent OOM killer and swapping
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    restart: unless-stopped
